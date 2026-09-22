@@ -67,8 +67,14 @@ export default function Home() {
   // OCR screenshots in the browser (Tesseract), then drop the numbers found
   // into the textarea so they can be reviewed before looking them up.
   async function readImages(files) {
-    const images = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
-    if (images.length === 0 || ocr) return;
+    if (ocr) return;
+    const images = Array.from(files || []).filter(
+      (f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)
+    );
+    if (images.length === 0) {
+      setError("That wasn't an image file. Drag in a screenshot (PNG or JPG).");
+      return;
+    }
     setError("");
     setOcrNote("");
     setOcr({ file: 1, of: images.length, pct: 0 });
@@ -118,6 +124,43 @@ export default function Home() {
     return () => window.removeEventListener("paste", onPaste);
   });
 
+  // Drag screenshots anywhere on the page. Without this, dropping an image
+  // outside the drop zone makes the browser navigate away to open it.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+    function onEnter(e) {
+      if (!hasFiles(e)) return;
+      depth++;
+      setDragging(true);
+    }
+    function onOver(e) {
+      if (hasFiles(e)) e.preventDefault();
+    }
+    function onLeave(e) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    }
+    function onDrop(e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      readImages(e.dataTransfer.files);
+    }
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  });
+
   useEffect(() => () => workerRef.current?.terminate(), []);
 
   function removeRow(phone) {
@@ -146,35 +189,54 @@ export default function Home() {
     <main>
       <h1>Number Lookup</h1>
       <p className="sub">
-        Paste phone numbers (one per line, or a whole chat export) or drop in screenshots. Get names
-        and LinkedIn profiles.
+        Drag in WhatsApp screenshots (or paste numbers / a chat export). Get names and LinkedIn
+        profiles.
       </p>
 
+      {dragging && (
+        <div className="dropoverlay">
+          <div>Drop screenshots to read the numbers</div>
+        </div>
+      )}
+
       <form
-        className={dragging ? "dragging" : ""}
         onSubmit={(e) => {
           e.preventDefault();
           lookup();
         }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          readImages(e.dataTransfer.files);
-        }}
       >
+        <div
+          className={"dropzone" + (ocr ? " busy" : "")}
+          role="button"
+          tabIndex={0}
+          onClick={() => !ocr && fileInput.current?.click()}
+          onKeyDown={(e) => {
+            if ((e.key === "Enter" || e.key === " ") && !ocr) {
+              e.preventDefault();
+              fileInput.current?.click();
+            }
+          }}
+        >
+          {ocr ? (
+            <>
+              <strong>
+                Reading {ocr.of > 1 ? `screenshot ${ocr.file} of ${ocr.of}` : "screenshot"}… {ocr.pct}%
+              </strong>
+              <span className="small">The first one takes a few seconds to warm up</span>
+            </>
+          ) : (
+            <>
+              <strong>Drag WhatsApp screenshots here</strong>
+              <span className="small">or click to choose files · or ⌘V to paste one</span>
+            </>
+          )}
+        </div>
         <textarea
           autoFocus
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"+1 (510) 555-1234\n+1 415 555 9876\n5105550000\n\n…or paste / drop screenshots here"}
+          placeholder={"Numbers from screenshots show up here — or paste them yourself:\n+1 (510) 555-1234\n+1 415 555 9876"}
         />
         <input
           ref={fileInput}
@@ -190,16 +252,6 @@ export default function Home() {
         <div className="row">
           <button disabled={loading || !!ocr}>
             {loading ? "Looking up..." : "Look up all"}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={!!ocr}
-            onClick={() => fileInput.current?.click()}
-          >
-            {ocr
-              ? `Reading ${ocr.of > 1 ? `${ocr.file}/${ocr.of} ` : ""}${ocr.pct}%...`
-              : "Upload screenshots"}
           </button>
           {progress && !loading && (
             <span className="small">
