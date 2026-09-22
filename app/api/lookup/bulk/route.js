@@ -1,27 +1,7 @@
 // Bulk lookup: paste many numbers at once (e.g. a whole groupchat).
 // Parses free-form text, extracts phone numbers, dedupes, and looks each up.
-import { normalizePhone } from "../../../../lib/phone.js";
+import { extractNumbers } from "../../../../lib/phone.js";
 import { lookupOne, providersConfigured } from "../../../../lib/lookup.js";
-
-// Pull candidate phone numbers out of arbitrary pasted text.
-// Handles one-per-line, comma/semicolon separated, and inline WhatsApp text.
-function extractNumbers(text) {
-  const raw = String(text || "");
-  // Match runs that look like phone numbers: optional +, digits, and the
-  // usual separators (spaces/tabs, parens, dashes, dots) but NOT newlines,
-  // so two numbers on adjacent lines never merge into one.
-  const matches = raw.match(/\+?\d[\d \t().\-]{6,}\d/g) || [];
-  const seen = new Set();
-  const out = [];
-  for (const m of matches) {
-    const e164 = normalizePhone(m);
-    if (e164.replace(/\D/g, "").length < 8) continue;
-    if (seen.has(e164)) continue;
-    seen.add(e164);
-    out.push(e164);
-  }
-  return out;
-}
 
 // Run lookups with a small concurrency cap so we don't hammer the APIs.
 async function mapWithConcurrency(items, limit, fn) {

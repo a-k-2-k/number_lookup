@@ -16,6 +16,7 @@ Paste a bunch of phone numbers (a whole groupchat's worth), get each person's na
 
 ## Usage
 - Paste numbers into the box, one per line or a full chat export. WhatsApp formatting (spaces, parens, hidden chars) is handled. 10-digit numbers are assumed US.
+- Or add screenshots (group member lists, contact cards, chats): click **Upload screenshots**, drag them onto the box, or Cmd/Ctrl+V a copied screenshot. Text is read in your browser with Tesseract OCR (no extra API key, images never leave your machine), and the numbers it finds are added to the box so you can check them before looking up.
 - Results build up into a saved contact table in your browser. Export to CSV anytime.
 - Lookups run 4 at a time; max 200 numbers per paste.
 

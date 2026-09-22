@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { extractNumbers, fixOcrDigits } from "../lib/phone.js";
 
 export default function Home() {
   const [text, setText] = useState("");
@@ -7,6 +8,11 @@ export default function Home() {
   const [progress, setProgress] = useState(null); // { done, total }
   const [error, setError] = useState("");
   const [rows, setRows] = useState([]); // results, newest lookups merged in
+  const [ocr, setOcr] = useState(null); // { file, of, pct } while reading screenshots
+  const [ocrNote, setOcrNote] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef(null);
+  const workerRef = useRef(null);
 
   // Load saved results so a personal contact list builds up over time.
   useEffect(() => {
@@ -58,6 +64,62 @@ export default function Home() {
     }
   }
 
+  // OCR screenshots in the browser (Tesseract), then drop the numbers found
+  // into the textarea so they can be reviewed before looking them up.
+  async function readImages(files) {
+    const images = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0 || ocr) return;
+    setError("");
+    setOcrNote("");
+    setOcr({ file: 1, of: images.length, pct: 0 });
+    try {
+      if (!workerRef.current) {
+        const { createWorker } = await import("tesseract.js");
+        workerRef.current = await createWorker("eng", 1, {
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              setOcr((o) => (o ? { ...o, pct: Math.round(m.progress * 100) } : o));
+            }
+          },
+        });
+      }
+      const found = [];
+      for (let i = 0; i < images.length; i++) {
+        setOcr({ file: i + 1, of: images.length, pct: 0 });
+        const { data } = await workerRef.current.recognize(images[i]);
+        found.push(...extractNumbers(fixOcrDigits(data.text)));
+      }
+      const existing = new Set(extractNumbers(text));
+      const fresh = [...new Set(found)].filter((n) => !existing.has(n));
+      if (fresh.length) setText((t) => [t.trim(), ...fresh].filter(Boolean).join("\n"));
+      const label = images.length === 1 ? "screenshot" : `${images.length} screenshots`;
+      setOcrNote(
+        found.length === 0
+          ? `No phone numbers found in ${label}.`
+          : `Found ${fresh.length} new number${fresh.length === 1 ? "" : "s"} in ${label}. Check them, then look up.`
+      );
+    } catch (e) {
+      setError("Couldn't read image: " + e.message);
+    } finally {
+      setOcr(null);
+    }
+  }
+
+  // Cmd/Ctrl+V a screenshot anywhere on the page.
+  useEffect(() => {
+    function onPaste(e) {
+      const files = Array.from(e.clipboardData?.files || []);
+      if (files.some((f) => f.type.startsWith("image/"))) {
+        e.preventDefault();
+        readImages(files);
+      }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+
+  useEffect(() => () => workerRef.current?.terminate(), []);
+
   function removeRow(phone) {
     persist(rows.filter((r) => r.phone !== phone));
   }
@@ -84,13 +146,27 @@ export default function Home() {
     <main>
       <h1>Number Lookup</h1>
       <p className="sub">
-        Paste phone numbers (one per line, or a whole chat export). Get names and LinkedIn profiles.
+        Paste phone numbers (one per line, or a whole chat export) or drop in screenshots. Get names
+        and LinkedIn profiles.
       </p>
 
       <form
+        className={dragging ? "dragging" : ""}
         onSubmit={(e) => {
           e.preventDefault();
           lookup();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          readImages(e.dataTransfer.files);
         }}
       >
         <textarea
@@ -98,17 +174,39 @@ export default function Home() {
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"+1 (510) 555-1234\n+1 415 555 9876\n5105550000"}
+          placeholder={"+1 (510) 555-1234\n+1 415 555 9876\n5105550000\n\n…or paste / drop screenshots here"}
+        />
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            readImages(e.target.files);
+            e.target.value = "";
+          }}
         />
         <div className="row">
-          <button disabled={loading}>
+          <button disabled={loading || !!ocr}>
             {loading ? "Looking up..." : "Look up all"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!!ocr}
+            onClick={() => fileInput.current?.click()}
+          >
+            {ocr
+              ? `Reading ${ocr.of > 1 ? `${ocr.file}/${ocr.of} ` : ""}${ocr.pct}%...`
+              : "Upload screenshots"}
           </button>
           {progress && !loading && (
             <span className="small">
               matched {progress.done} of {progress.total}
             </span>
           )}
+          {ocrNote && !ocr && !loading && <span className="small">{ocrNote}</span>}
         </div>
       </form>
 
