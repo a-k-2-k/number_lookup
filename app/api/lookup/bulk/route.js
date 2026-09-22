@@ -38,10 +38,10 @@ async function mapWithConcurrency(items, limit, fn) {
 }
 
 export async function POST(req) {
-  const { trestle, pdl } = providersConfigured();
-  if (!trestle && !pdl) {
+  const { trestle, pdl, twilio } = providersConfigured();
+  if (!trestle && !pdl && !twilio) {
     return Response.json(
-      { error: "No provider configured. Add TRESTLE_API_KEY (and optionally PDL_API_KEY) to .env.local" },
+      { error: "No provider configured. Add PDL_API_KEY, TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN, or TRESTLE_API_KEY to .env.local" },
       { status: 500 }
     );
   }
