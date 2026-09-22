@@ -1,13 +1,13 @@
 // Server-side only: keeps API keys out of the browser.
-// Single-number lookup. Merges PDL, Twilio, and Trestle when configured.
+// Single-number lookup. Merges PDL and Trestle when configured.
 import { normalizePhone } from "../../../lib/phone.js";
 import { lookupOne, providersConfigured } from "../../../lib/lookup.js";
 
 export async function POST(req) {
-  const { trestle, pdl, twilio } = providersConfigured();
-  if (!trestle && !pdl && !twilio) {
+  const { pdl, trestle } = providersConfigured();
+  if (!pdl && !trestle) {
     return Response.json(
-      { error: "No provider configured. Add PDL_API_KEY, TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN, or TRESTLE_API_KEY to .env.local" },
+      { error: "No provider configured. Add PDL_API_KEY (and optionally TRESTLE_API_KEY) to .env.local" },
       { status: 500 }
     );
   }
